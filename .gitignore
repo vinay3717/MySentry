@@ -3,5 +3,13 @@ BUILD_T2_frontend_data.md
 BUILD.md
 INTEGRATION.md
 PREREQUISITES.md
+
+# Python
 __pycache__/
 *.py[cod]
+*.pyc
+
+# IDE & Language Server
+.vscode/
+pyrefly.toml
+pyproject.toml
