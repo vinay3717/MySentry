@@ -149,6 +149,22 @@ class PoisoningDetector:
         else:
             return "🔴 CRITICAL: Dataset is heavily poisoned - reject immediately"
 
+    @staticmethod
+    def _get_verdict(score: float) -> str:
+        """Maps a poisoning score to the verdict category from BUILD.md."""
+        if score < 5:
+            return "Clean"
+        elif score < 20:
+            return "Minor anomalies"
+        elif score < 50:
+            return "Significant"
+        else:
+            return "Critical"
+
+    # Public aliases for external/direct use
+    get_recommendation = _get_recommendation
+    get_verdict = _get_verdict
+
     def generate_report(self, dataset_name: str, X: np.ndarray, y: np.ndarray) -> dict:
         """
         Main entry point for T2's dashboard. Runs the full detection pipeline
