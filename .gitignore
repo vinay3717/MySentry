@@ -8,5 +8,7 @@ PREREQUISITES.md
 __pycache__/
 *.pyc
 
-# IDE
+# IDE & Language Server
 .vscode/
+pyrefly.toml
+pyproject.toml
