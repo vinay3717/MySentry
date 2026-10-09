@@ -102,7 +102,7 @@ class PoisoningDetector:
         # Subtract expected baseline: contamination param forces ~contamination fraction
         # to be flagged even on clean data. Only excess flags indicate real poisoning.
         expected_flag_rate = self.contamination
-        strong_ratio = max(0, (both_flagged.sum() / n_samples) - expected_flag_rate * 0.5)
+        strong_ratio = max(0, (both_flagged.sum() / n_samples) - expected_flag_rate * 0.75)
         weak_ratio = max(0, (either_flagged.sum() / n_samples) - expected_flag_rate)
 
         # Anomaly score: scale so 20% excess flagging = score ~100
@@ -127,7 +127,7 @@ class PoisoningDetector:
 
         # --- Ensemble: combine into single score ---
         # Label-flip is the stronger, more actionable signal for this tool
-        poisoning_score = min(0.35 * anomaly_score + 0.65 * label_flip_score, 100.0)
+        poisoning_score = min(0.30 * anomaly_score + 0.70 * label_flip_score, 100.0)
 
         # Suspicious = flagged by any detector
         all_suspicious = either_flagged | label_flip_flags
