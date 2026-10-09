@@ -7,6 +7,8 @@ from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 
+from .scoring import get_recommendation, get_verdict
+
 
 class PoisoningDetector:
     """
@@ -190,33 +192,11 @@ class PoisoningDetector:
 
 
 
-    @staticmethod
-    def _get_recommendation(score: float) -> str:
-        """Maps a poisoning score to a human-readable recommendation string."""
-        if score < 5:
-            return "✅ Dataset appears clean"
-        elif score < 20:
-            return "⚠️ Minor anomalies detected - investigate further"
-        elif score < 50:
-            return "🚨 Significant poisoning detected - DO NOT USE"
-        else:
-            return "🔴 CRITICAL: Dataset is heavily poisoned - reject immediately"
-
-    @staticmethod
-    def _get_verdict(score: float) -> str:
-        """Maps a poisoning score to the verdict category from BUILD.md."""
-        if score < 5:
-            return "Clean"
-        elif score < 20:
-            return "Minor anomalies"
-        elif score < 50:
-            return "Significant"
-        else:
-            return "Critical"
-
-    # Public aliases for external/direct use
-    get_recommendation = _get_recommendation
-    get_verdict = _get_verdict
+    # Recommendation & verdict helpers delegated to backend.scoring
+    _get_recommendation = staticmethod(get_recommendation)
+    _get_verdict = staticmethod(get_verdict)
+    get_recommendation = staticmethod(get_recommendation)
+    get_verdict = staticmethod(get_verdict)
 
     def generate_report(self, dataset_name: str, X: np.ndarray, y: np.ndarray) -> dict:
         """
