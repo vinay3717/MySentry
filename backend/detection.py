@@ -3,7 +3,7 @@ backend/detection.py - Core Poisoning Detection Engine for SENTRY
 """
 
 import numpy as np
-from sklearn.ensemble import IsolationForest
+from sklearn.ensemble import IsolationForest, RandomForestClassifier
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 
@@ -49,3 +49,29 @@ class PoisoningDetector:
         predictions = self.lof.fit_predict(X)
         scores = self.lof.negative_outlier_factor_
         return predictions, scores
+
+    def detect_label_flip_attacks(self, X: np.ndarray, y: np.ndarray, confidence_threshold: float = 0.6):
+        """
+        Detects potential label-flip attacks by training a classifier and flagging
+        samples with low confidence or mismatched labels.
+        Returns:
+            suspicious: boolean ndarray indicating suspicious samples
+            confidence: ndarray of maximum predicted class probabilities
+            predictions: ndarray of model predictions
+        """
+        model = RandomForestClassifier(n_estimators=50, random_state=self.random_state, oob_score=True)
+        model.fit(X, y)
+
+        if hasattr(model, 'oob_decision_function_') and model.oob_decision_function_ is not None:
+            probs = model.oob_decision_function_
+            if np.isnan(probs).any():
+                in_sample_probs = model.predict_proba(X)
+                probs = np.where(np.isnan(probs), in_sample_probs, probs)
+            preds = np.argmax(probs, axis=1)
+        else:
+            probs = model.predict_proba(X)
+            preds = model.predict(X)
+
+        confidence = np.max(probs, axis=1)
+        suspicious = (confidence < confidence_threshold) | (preds != y)
+        return suspicious, confidence, preds
