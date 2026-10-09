@@ -3,7 +3,6 @@ BUILD_T2_frontend_data.md
 BUILD.md
 INTEGRATION.md
 PREREQUISITES.md
-
 # Python
 __pycache__/
 *.pyc
