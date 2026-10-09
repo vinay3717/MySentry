@@ -4,3 +4,9 @@ BUILD.md
 INTEGRATION.md
 PREREQUISITES.md
 
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
