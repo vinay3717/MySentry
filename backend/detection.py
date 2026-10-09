@@ -105,8 +105,13 @@ class PoisoningDetector:
         strong_ratio = max(0, (both_flagged.sum() / n_samples) - expected_flag_rate * 0.75)
         weak_ratio = max(0, (either_flagged.sum() / n_samples) - expected_flag_rate)
 
-        # Anomaly score: scale so 20% excess flagging = score ~100
-        anomaly_score = min((strong_ratio * 300 + weak_ratio * 200), 100.0)
+        # Detect extreme feature outlier deviations (samples far beyond normal density)
+        extreme_lof = (lof_scores < -1.6).sum()
+        extreme_iso = (iso_scores < -0.60).sum()
+        outlier_severity = min(100.0, (extreme_lof / n_samples) * 350 + (extreme_iso / n_samples) * 250)
+
+        # Anomaly score: combines excess flag ratio with raw density deviation severity
+        anomaly_score = min((strong_ratio * 300 + weak_ratio * 200) + outlier_severity, 100.0)
 
         # --- Label-flip detection ---
         label_flip_flags, confidence, _ = self.detect_label_flip_attacks(X_scaled, y)
@@ -129,11 +134,59 @@ class PoisoningDetector:
         # Label-flip is the stronger, more actionable signal for this tool
         poisoning_score = min(0.30 * anomaly_score + 0.70 * label_flip_score, 100.0)
 
-        # Suspicious = flagged by any detector
-        all_suspicious = either_flagged | label_flip_flags
+        # Suspicious = flagged by any detector or extreme outlier
+        extreme_samples = (lof_scores < -1.6) | (iso_scores < -0.60)
+        all_suspicious = either_flagged | label_flip_flags | extreme_samples
         suspicious_indices = list(np.where(all_suspicious)[0])
 
         return poisoning_score, anomaly_score, label_flip_score, suspicious_indices
+
+    def compute_confidence_interval(
+        self, X: np.ndarray, y: np.ndarray, n_bootstrap: int = 15, confidence_level: float = 0.95
+    ) -> tuple[float, float]:
+        """
+        Task 6: Calculates empirical confidence intervals for poisoning score
+        via bootstrap resampling.
+        Returns:
+            (lower_bound, upper_bound): tuple of floats (0-100)
+        """
+        scores = []
+        n_samples = len(X)
+        rng = np.random.RandomState(self.random_state)
+        for _ in range(n_bootstrap):
+            idx = rng.choice(n_samples, size=n_samples, replace=True)
+            score, _, _, _ = self.compute_poisoning_score(X[idx], y[idx])
+            scores.append(score)
+
+        alpha = (1.0 - confidence_level) / 2.0
+        lower = float(np.percentile(scores, alpha * 100))
+        upper = float(np.percentile(scores, (1.0 - alpha) * 100))
+        return round(max(0.0, lower), 2), round(min(100.0, upper), 2)
+
+    def compute_attack_breakdown(self, X: np.ndarray, y: np.ndarray) -> dict:
+        """
+        Task 6: Returns a granular breakdown of detected attack types:
+        - label_flip vs feature_outlier vs clean
+        """
+        poisoning_score, anomaly_score, label_flip_score, suspicious_indices = \
+            self.compute_poisoning_score(X, y)
+
+        if label_flip_score >= 20.0 and label_flip_score >= anomaly_score:
+            dominant_attack = "Label-Flipping Attack"
+        elif anomaly_score >= 20.0:
+            dominant_attack = "Feature Outlier Attack"
+        elif poisoning_score < 5.0:
+            dominant_attack = "None (Clean)"
+        else:
+            dominant_attack = "Indeterminate Anomalies"
+
+        return {
+            'poisoning_score': round(poisoning_score, 2),
+            'anomaly_score': round(anomaly_score, 2),
+            'label_flip_score': round(label_flip_score, 2),
+            'dominant_attack': dominant_attack,
+            'total_flagged': len(suspicious_indices),
+        }
 
 
 
