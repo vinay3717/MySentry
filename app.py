@@ -7,40 +7,27 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
-def stub_generate_report(name: str, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+from backend.detection import PoisoningDetector
+
+
+_detector_instance: Optional[PoisoningDetector] = None
+
+
+def get_detector() -> PoisoningDetector:
+    """Singleton getter for the backend PoisoningDetector engine."""
+    global _detector_instance
+    if _detector_instance is None:
+        _detector_instance = PoisoningDetector()
+    return _detector_instance
+
+
+def generate_report(name: str, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
     """
-    Temporary stub for PoisoningDetector.generate_report.
-    Returns the exact schema frozen in BUILD.md Shared Contract.
-    To be swapped with backend.detection.PoisoningDetector at Task 3.
+    Runs the real SENTRY PoisoningDetector on the dataset and returns the audit report.
+    Contract schema matches BUILD.md exactly.
     """
-    total = len(X)
-    is_clean = "clean" in name.lower()
-
-    if is_clean:
-        poisoning_score = 3.5
-        anomaly_score = 4.0
-        label_flip_score = 3.0
-        suspicious_count = min(3, total)
-        recommendation = "✅ Dataset appears clean"
-    else:
-        poisoning_score = 54.0
-        anomaly_score = 48.0
-        label_flip_score = 62.0
-        suspicious_count = min(40, total)
-        recommendation = "🔴 CRITICAL: Dataset is heavily poisoned — reject immediately"
-
-    suspicious_indices = list(range(suspicious_count))
-
-    return {
-        'dataset': name,
-        'total_samples': total,
-        'poisoning_score': poisoning_score,
-        'anomaly_score': anomaly_score,
-        'label_flip_score': label_flip_score,
-        'suspicious_samples': suspicious_count,
-        'suspicious_indices': suspicious_indices,
-        'recommendation': recommendation
-    }
+    detector = get_detector()
+    return detector.generate_report(name, X, y)
 
 
 def create_comparison_chart(report_clean: Dict[str, Any], report_poison: Dict[str, Any]) -> go.Figure:
@@ -190,12 +177,12 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
             df_clean = pd.read_csv(clean_csv_path)
             df_poison = pd.read_csv(poisoned_csv_path)
 
-            report_clean = stub_generate_report(
+            report_clean = generate_report(
                 "clean_dataset.csv",
                 df_clean.drop('Label', axis=1).values,
                 df_clean['Label'].values
             )
-            report_poison = stub_generate_report(
+            report_poison = generate_report(
                 "poisoned_dataset.csv",
                 df_poison.drop('Label', axis=1).values,
                 df_poison['Label'].values
@@ -244,12 +231,12 @@ def render_side_by_side_demo(clean_path: str, poison_path: str):
     df_clean = pd.read_csv(clean_path)
     df_poison = pd.read_csv(poison_path)
 
-    report_clean = stub_generate_report(
+    report_clean = generate_report(
         "clean_dataset.csv",
         df_clean.drop('Label', axis=1).values,
         df_clean['Label'].values
     )
-    report_poison = stub_generate_report(
+    report_poison = generate_report(
         "poisoned_dataset.csv",
         df_poison.drop('Label', axis=1).values,
         df_poison['Label'].values
@@ -343,7 +330,7 @@ def main():
             X = df[feature_cols].values
             y = df['Label'].values
 
-            report = stub_generate_report(uploaded_file.name, X, y)  # swap at Task 3
+            report = generate_report(uploaded_file.name, X, y)
             render_dataset_dashboard(uploaded_file.name, df, report, show_benchmark=True)
         except Exception as e:
             st.error(f"Error processing dataset: {e}")
@@ -353,7 +340,7 @@ def main():
 
     elif st.session_state.demo_view == "clean" and demo_ready:
         df_clean = pd.read_csv(clean_csv_path)
-        report_clean = stub_generate_report(
+        report_clean = generate_report(
             "clean_dataset.csv",
             df_clean.drop('Label', axis=1).values,
             df_clean['Label'].values
@@ -362,7 +349,7 @@ def main():
 
     elif st.session_state.demo_view == "poisoned" and demo_ready:
         df_poison = pd.read_csv(poisoned_csv_path)
-        report_poison = stub_generate_report(
+        report_poison = generate_report(
             "poisoned_dataset.csv",
             df_poison.drop('Label', axis=1).values,
             df_poison['Label'].values
@@ -376,12 +363,12 @@ def main():
             df_clean = pd.read_csv(clean_csv_path)
             df_poison = pd.read_csv(poisoned_csv_path)
 
-            report_clean = stub_generate_report(
+            report_clean = generate_report(
                 "clean_dataset.csv",
                 df_clean.drop('Label', axis=1).values,
                 df_clean['Label'].values
             )
-            report_poison = stub_generate_report(
+            report_poison = generate_report(
                 "poisoned_dataset.csv",
                 df_poison.drop('Label', axis=1).values,
                 df_poison['Label'].values
