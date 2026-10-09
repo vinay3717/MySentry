@@ -8,6 +8,12 @@ import streamlit as st
 
 
 from backend.detection import PoisoningDetector
+from data.schema_mapper import (
+    suggest_schema,
+    binarize_label,
+    reshape_to_contract,
+    validate_dataset_mappable,
+)
 
 
 _detector_instance: Optional[PoisoningDetector] = None
@@ -321,17 +327,109 @@ def main():
     # Route UI rendering
     if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
-            if 'Label' not in df.columns:
-                st.error("⚠️ Dataset is missing required 'Label' column. Please check schema.")
-                return
+            raw_df = pd.read_csv(uploaded_file)
 
-            feature_cols = [c for c in df.columns if c != 'Label']
-            X = df[feature_cols].values
-            y = df['Label'].values
+            # Check if dataset already matches the standard synthetic schema (Feature_1..N + Label)
+            has_standard_schema = (
+                'Label' in raw_df.columns and
+                all(c.startswith('Feature_') for c in raw_df.columns if c != 'Label') and
+                raw_df['Label'].dropna().nunique() <= 2
+            )
 
-            report = generate_report(uploaded_file.name, X, y)
-            render_dataset_dashboard(uploaded_file.name, df, report, show_benchmark=True)
+            if has_standard_schema:
+                feature_cols = [c for c in raw_df.columns if c != 'Label']
+                X = raw_df[feature_cols].values
+                y = raw_df['Label'].values
+                report = generate_report(uploaded_file.name, X, y)
+                render_dataset_dashboard(uploaded_file.name, raw_df, report, show_benchmark=True)
+            else:
+                # Flexible schema ingestion flow (BUILD_FEATURE_flexible_schema.md)
+                is_valid, validation_msg = validate_dataset_mappable(raw_df)
+                if not is_valid:
+                    st.error(f"⚠️ Dataset cannot be processed: {validation_msg}")
+                    return
+
+                schema_guess = suggest_schema(raw_df)
+
+                st.sidebar.markdown("---")
+                st.sidebar.subheader("⚙️ Flexible Schema Mapping")
+                st.sidebar.caption("Map real-world tabular data into SENTRY's detection contract.")
+
+                col_options = list(raw_df.columns)
+                default_label_idx = (
+                    col_options.index(schema_guess['label_guess'])
+                    if schema_guess['label_guess'] in col_options
+                    else len(col_options) - 1
+                )
+
+                # Task 2: Select label column
+                label_col = st.sidebar.selectbox(
+                    "Which column is the Label / Target?",
+                    col_options,
+                    index=default_label_idx,
+                    help="Ground-truth classification target to inspect for label flipping."
+                )
+
+                # Task 2: Exclude non-feature columns
+                available_exclude_cols = [c for c in col_options if c != label_col]
+                default_exclude = [c for c in schema_guess['id_cols'] if c in available_exclude_cols]
+
+                exclude_cols = st.sidebar.multiselect(
+                    "Columns to exclude (IDs, indices, timestamps):",
+                    available_exclude_cols,
+                    default=default_exclude,
+                    help="Non-feature metadata that should not be fed to the ML detector."
+                )
+
+                # Task 3: Label binarization for multi-class/continuous targets
+                binarize_threshold = None
+                label_series = raw_df[label_col].dropna()
+                unique_label_count = label_series.nunique()
+
+                if unique_label_count > 2:
+                    st.sidebar.markdown("##### 🔀 Label Binarization")
+                    st.sidebar.info(f"Target `{label_col}` has **{unique_label_count}** unique values. Detector requires binary 0/1.")
+                    if pd.api.types.is_numeric_dtype(label_series):
+                        min_v = float(label_series.min())
+                        max_v = float(label_series.max())
+                        med_v = float(label_series.median())
+                        is_integer_col = issubclass(label_series.dtype.type, (int, np.integer))
+                        step_v = 1.0 if is_integer_col else (max_v - min_v) / 100.0
+
+                        binarize_threshold = st.sidebar.slider(
+                            "Binarization Threshold (≥ threshold → 1, < threshold → 0):",
+                            min_value=min_v,
+                            max_value=max_v,
+                            value=med_v,
+                            step=max(step_v, 0.01)
+                        )
+                        c0_count = (label_series < binarize_threshold).sum()
+                        c1_count = (label_series >= binarize_threshold).sum()
+                        st.sidebar.caption(f"Preview split: Class 0 = **{c0_count}**, Class 1 = **{c1_count}**")
+
+                # Task 4: Reshape into frozen contract (Feature_1..N + Label)
+                mapped_df, dropped_non_numeric = reshape_to_contract(
+                    raw_df,
+                    label_col=label_col,
+                    exclude_cols=exclude_cols,
+                    binarize_threshold=binarize_threshold
+                )
+
+                if dropped_non_numeric:
+                    st.sidebar.warning(f"⚠️ {len(dropped_non_numeric)} non-numeric feature column(s) excluded: {', '.join(dropped_non_numeric)}")
+
+                if len(mapped_df.columns) <= 1:
+                    st.error("⚠️ No numeric feature columns remain after exclusions. Please adjust excluded columns in the sidebar.")
+                    return
+
+                feature_cols = [c for c in mapped_df.columns if c != 'Label']
+                X = mapped_df[feature_cols].values
+                y = mapped_df['Label'].values
+
+                st.sidebar.success(f"✅ Transformed to {len(feature_cols)} features + binary label")
+
+                report = generate_report(uploaded_file.name, X, y)
+                render_dataset_dashboard(uploaded_file.name, raw_df, report, show_benchmark=True)
         except Exception as e:
             st.error(f"Error processing dataset: {e}")
 
