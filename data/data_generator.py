@@ -46,7 +46,7 @@ def poison_dataset(df: pd.DataFrame, poison_type: str = 'label_flip', contaminat
 
     return df_poison
 
-def generate_and_save_datasets(data_dir: str = None):
+def generate_and_save_datasets(data_dir: str | None = None):
     """
     Generate and save clean_dataset.csv and poisoned_dataset.csv.
     """
