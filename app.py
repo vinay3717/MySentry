@@ -6,41 +6,24 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from backend.detection import PoisoningDetector
 
-def stub_generate_report(name: str, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+
+@st.cache_resource
+def get_detector() -> PoisoningDetector:
     """
-    Temporary stub for PoisoningDetector.generate_report.
-    Returns the exact schema frozen in BUILD.md Shared Contract.
-    To be swapped with backend.detection.PoisoningDetector at Task 3.
+    Cached instance of T1's PoisoningDetector engine.
     """
-    total = len(X)
-    is_clean = "clean" in name.lower()
+    return PoisoningDetector()
 
-    if is_clean:
-        poisoning_score = 3.5
-        anomaly_score = 4.0
-        label_flip_score = 3.0
-        suspicious_count = min(3, total)
-        recommendation = "✅ Dataset appears clean"
-    else:
-        poisoning_score = 54.0
-        anomaly_score = 48.0
-        label_flip_score = 62.0
-        suspicious_count = min(40, total)
-        recommendation = "🔴 CRITICAL: Dataset is heavily poisoned — reject immediately"
 
-    suspicious_indices = list(range(suspicious_count))
-
-    return {
-        'dataset': name,
-        'total_samples': total,
-        'poisoning_score': poisoning_score,
-        'anomaly_score': anomaly_score,
-        'label_flip_score': label_flip_score,
-        'suspicious_samples': suspicious_count,
-        'suspicious_indices': suspicious_indices,
-        'recommendation': recommendation
-    }
+def generate_report(name: str, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    """
+    Task 3: Real detector integration.
+    Calls backend.detection.PoisoningDetector.generate_report per BUILD.md Shared Contract.
+    """
+    detector = get_detector()
+    return detector.generate_report(name, X, y)
 
 
 def create_comparison_chart(report_clean: Dict[str, Any], report_poison: Dict[str, Any]) -> go.Figure:
@@ -50,14 +33,14 @@ def create_comparison_chart(report_clean: Dict[str, Any], report_poison: Dict[st
     """
     categories = ['Poisoning Score', 'Anomaly Score', 'Label Flip Score']
     clean_values = [
-        report_clean.get('poisoning_score', 0.0),
-        report_clean.get('anomaly_score', 0.0),
-        report_clean.get('label_flip_score', 0.0)
+        float(report_clean.get('poisoning_score', 0.0)),
+        float(report_clean.get('anomaly_score', 0.0)),
+        float(report_clean.get('label_flip_score', 0.0))
     ]
     poison_values = [
-        report_poison.get('poisoning_score', 0.0),
-        report_poison.get('anomaly_score', 0.0),
-        report_poison.get('label_flip_score', 0.0)
+        float(report_poison.get('poisoning_score', 0.0)),
+        float(report_poison.get('anomaly_score', 0.0)),
+        float(report_poison.get('label_flip_score', 0.0))
     ]
 
     fig = go.Figure(data=[
@@ -108,8 +91,8 @@ def generate_text_report(report: Dict[str, Any]) -> str:
     """
     Task 5: Format a plain-text audit summary report for download.
     """
-    verdict = get_verdict_badge(report.get('poisoning_score', 0.0))
-    indices_str = ", ".join(map(str, report.get('suspicious_indices', [])))
+    verdict = get_verdict_badge(float(report.get('poisoning_score', 0.0)))
+    indices_str = ", ".join(map(str, [int(i) for i in report.get('suspicious_indices', [])]))
     if not indices_str:
         indices_str = "None"
 
@@ -123,9 +106,9 @@ Total Samples Analyzed: {report.get('total_samples', 0)}
 ----------------------------------------------------------------------
 DETECTION METRICS SUMMARY:
 ----------------------------------------------------------------------
-- Overall Poisoning Score: {report.get('poisoning_score', 0.0):.1f}%
-- Feature Anomaly / Outlier Score: {report.get('anomaly_score', 0.0):.1f}%
-- Label-Flipping Mismatch Score: {report.get('label_flip_score', 0.0):.1f}%
+- Overall Poisoning Score: {float(report.get('poisoning_score', 0.0)):.1f}%
+- Feature Anomaly / Outlier Score: {float(report.get('anomaly_score', 0.0)):.1f}%
+- Label-Flipping Mismatch Score: {float(report.get('label_flip_score', 0.0)):.1f}%
 - Suspicious Samples Flagged: {report.get('suspicious_samples', 0)}
 - Dataset Security Verdict: {verdict}
 
@@ -154,10 +137,10 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
 
     # Top KPI Summary Cards
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Poisoning Score", f"{report['poisoning_score']:.1f}%")
-    col2.metric("Anomaly Score", f"{report['anomaly_score']:.1f}%")
-    col3.metric("Label-Flip Score", f"{report['label_flip_score']:.1f}%")
-    col4.metric("Status", get_verdict_badge(report['poisoning_score']))
+    col1.metric("Poisoning Score", f"{float(report['poisoning_score']):.1f}%")
+    col2.metric("Anomaly Score", f"{float(report['anomaly_score']):.1f}%")
+    col3.metric("Label-Flip Score", f"{float(report['label_flip_score']):.1f}%")
+    col4.metric("Status", get_verdict_badge(float(report['poisoning_score'])))
 
     st.info(f"**Recommendation:** {report['recommendation']}")
 
@@ -190,12 +173,12 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
             df_clean = pd.read_csv(clean_csv_path)
             df_poison = pd.read_csv(poisoned_csv_path)
 
-            report_clean = stub_generate_report(
+            report_clean = generate_report(
                 "clean_dataset.csv",
                 df_clean.drop('Label', axis=1).values,
                 df_clean['Label'].values
             )
-            report_poison = stub_generate_report(
+            report_poison = generate_report(
                 "poisoned_dataset.csv",
                 df_poison.drop('Label', axis=1).values,
                 df_poison['Label'].values
@@ -204,7 +187,7 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
             fig = create_comparison_chart(report_clean, report_poison)
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.write(f"Analyzed {report['total_samples']} samples. Poisoning score is {report['poisoning_score']:.1f}%.")
+            st.write(f"Analyzed {report['total_samples']} samples. Poisoning score is {float(report['poisoning_score']):.1f}%.")
 
     with tab_label_flip:
         st.markdown("### 🏷️ Label-Flipping Attack Detection")
@@ -213,7 +196,7 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
             "confidence mismatch against random forest estimators."
         )
         col_lf1, col_lf2 = st.columns(2)
-        col_lf1.metric("Label-Flip Score", f"{report['label_flip_score']:.1f}%")
+        col_lf1.metric("Label-Flip Score", f"{float(report['label_flip_score']):.1f}%")
         col_lf2.metric("Flagged Sample Ratio", f"{report['suspicious_samples']}/{report['total_samples']}")
 
     with tab_anomaly:
@@ -223,15 +206,17 @@ def render_dataset_dashboard(dataset_name: str, df: pd.DataFrame, report: Dict[s
             "and Local Outlier Factor (LOF) estimators to identify corrupted or out-of-distribution values."
         )
         col_an1, col_an2 = st.columns(2)
-        col_an1.metric("Anomaly Score", f"{report['anomaly_score']:.1f}%")
-        col_an2.metric("Contamination Estimate", f"{(report['anomaly_score'] / 100):.2f}")
+        col_an1.metric("Anomaly Score", f"{float(report['anomaly_score']):.1f}%")
+        col_an2.metric("Contamination Estimate", f"{(float(report['anomaly_score']) / 100):.2f}")
 
     with tab_inspector:
         st.markdown("### 🔍 Suspicious Samples Inspector")
         st.write(f"Total flagged rows: **{report['suspicious_samples']}**")
-        flagged_idx = report.get('suspicious_indices', [])
+        flagged_idx = [int(i) for i in report.get('suspicious_indices', [])]
         if flagged_idx:
-            flagged_df = df.iloc[flagged_idx].copy()
+            # Filter valid row indices in case of any range boundaries
+            valid_idx = [i for i in flagged_idx if 0 <= i < len(df)]
+            flagged_df = df.iloc[valid_idx].copy()
             st.dataframe(flagged_df, use_container_width=True)
         else:
             st.success("No suspicious samples detected in this dataset.")
@@ -244,12 +229,12 @@ def render_side_by_side_demo(clean_path: str, poison_path: str):
     df_clean = pd.read_csv(clean_path)
     df_poison = pd.read_csv(poison_path)
 
-    report_clean = stub_generate_report(
+    report_clean = generate_report(
         "clean_dataset.csv",
         df_clean.drop('Label', axis=1).values,
         df_clean['Label'].values
     )
-    report_poison = stub_generate_report(
+    report_poison = generate_report(
         "poisoned_dataset.csv",
         df_poison.drop('Label', axis=1).values,
         df_poison['Label'].values
@@ -262,9 +247,9 @@ def render_side_by_side_demo(clean_path: str, poison_path: str):
         st.markdown("### 📗 Clean Dataset (`clean_dataset.csv`)")
         st.dataframe(df_clean.head(6), use_container_width=True)
         c1, c2 = st.columns(2)
-        c1.metric("Poisoning Score", f"{report_clean['poisoning_score']:.1f}%")
-        c2.metric("Status", get_verdict_badge(report_clean['poisoning_score']))
-        st.success(f"{report_clean['recommendation']}")
+        c1.metric("Poisoning Score", f"{float(report_clean['poisoning_score']):.1f}%")
+        c2.metric("Status", get_verdict_badge(float(report_clean['poisoning_score'])))
+        st.info(f"{report_clean['recommendation']}")
 
         txt_clean = generate_text_report(report_clean)
         st.download_button(
@@ -279,8 +264,8 @@ def render_side_by_side_demo(clean_path: str, poison_path: str):
         st.markdown("### 📕 Poisoned Dataset (`poisoned_dataset.csv`)")
         st.dataframe(df_poison.head(6), use_container_width=True)
         p1, p2 = st.columns(2)
-        p1.metric("Poisoning Score", f"{report_poison['poisoning_score']:.1f}%")
-        p2.metric("Status", get_verdict_badge(report_poison['poisoning_score']))
+        p1.metric("Poisoning Score", f"{float(report_poison['poisoning_score']):.1f}%")
+        p2.metric("Status", get_verdict_badge(float(report_poison['poisoning_score'])))
         st.error(f"{report_poison['recommendation']}")
 
         txt_poison = generate_text_report(report_poison)
@@ -311,7 +296,7 @@ def main():
     uploaded_file = st.sidebar.file_uploader("Upload Dataset (CSV)", type="csv")
 
     st.sidebar.markdown("---")
-    st.sidebar.header("🚀 Demo Mode (Task 5)")
+    st.sidebar.header("🚀 Demo Mode")
 
     if "demo_view" not in st.session_state:
         st.session_state.demo_view = None
@@ -343,7 +328,7 @@ def main():
             X = df[feature_cols].values
             y = df['Label'].values
 
-            report = stub_generate_report(uploaded_file.name, X, y)  # swap at Task 3
+            report = generate_report(uploaded_file.name, X, y)  # Task 3: real detector
             render_dataset_dashboard(uploaded_file.name, df, report, show_benchmark=True)
         except Exception as e:
             st.error(f"Error processing dataset: {e}")
@@ -353,7 +338,7 @@ def main():
 
     elif st.session_state.demo_view == "clean" and demo_ready:
         df_clean = pd.read_csv(clean_csv_path)
-        report_clean = stub_generate_report(
+        report_clean = generate_report(
             "clean_dataset.csv",
             df_clean.drop('Label', axis=1).values,
             df_clean['Label'].values
@@ -362,7 +347,7 @@ def main():
 
     elif st.session_state.demo_view == "poisoned" and demo_ready:
         df_poison = pd.read_csv(poisoned_csv_path)
-        report_poison = stub_generate_report(
+        report_poison = generate_report(
             "poisoned_dataset.csv",
             df_poison.drop('Label', axis=1).values,
             df_poison['Label'].values
@@ -376,12 +361,12 @@ def main():
             df_clean = pd.read_csv(clean_csv_path)
             df_poison = pd.read_csv(poisoned_csv_path)
 
-            report_clean = stub_generate_report(
+            report_clean = generate_report(
                 "clean_dataset.csv",
                 df_clean.drop('Label', axis=1).values,
                 df_clean['Label'].values
             )
-            report_poison = stub_generate_report(
+            report_poison = generate_report(
                 "poisoned_dataset.csv",
                 df_poison.drop('Label', axis=1).values,
                 df_poison['Label'].values
